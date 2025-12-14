@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Sensor Data</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .chart-card { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        
+        /* 🚨 RED ALERT OVERLAY STYLES */
+        #fall-overlay {
+            display: none; /* Hidden by default */
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(220, 53, 69, 0.95); /* Red transparent */
+            z-index: 9999;
+            color: white;
+            text-align: center;
+            padding-top: 20%;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="fall-overlay" onclick="dismissAlert()">
+        <h1 class="display-1 fw-bold">⚠️ FALL DETECTED!</h1>
+        <h3>Sensor values exceeded critical threshold.</h3>
+        <p class="mt-4">Tap anywhere to dismiss</p>
+    </div>
+
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">⬅ Back to Dashboard</a>
+            <span class="text-white">Live Phone Sensors</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="chart-card">
+            <h4 class="mb-3">📡 Real-Time Accelerometer (X, Y, Z)</h4>
+            <canvas id="accChart"></canvas>
+        </div>
+
+        <div class="alert alert-info mt-3 shadow-sm">
+            <h5>📱 How to connect your phone:</h5>
+            <ol>
+                <li>Ensure phone is on same WiFi.</li>
+                <li>Open <b>/sender</b> on your phone.</li>
+                <li>Keep the phone screen on.</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('accChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'X Axis', data: [], borderColor: 'red', tension: 0.1, fill: false },
+                    { label: 'Y Axis', data: [], borderColor: 'green', tension: 0.1, fill: false },
+                    { label: 'Z Axis', data: [], borderColor: 'blue', tension: 0.1, fill: false }
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: false, 
+                scales: { y: { min: -15, max: 15 } }
+            }
+        });
+
+        let alertShown = false;
+
+        function fetchData() {
+            fetch('/api/get_acceleration')
+                .then(r => r.json())
+                .then(response => {
+                    const data = response.sensor_data; // Access list inside the object
+                    const isFall = response.alert;     // Check alert status
+
+                    // 🚨 TRIGGER ALERT LOGIC
+                    if (isFall && !alertShown) {
+                        showAlert();
+                    }
+
+                    // Update Graph
+                    if (data.length > 0) {
+                        chart.data.labels = data.map(d => d.time);
+                        chart.data.datasets[0].data = data.map(d => d.x);
+                        chart.data.datasets[1].data = data.map(d => d.y);
+                        chart.data.datasets[2].data = data.map(d => d.z);
+                        chart.update();
+                    }
+                });
+        }
+
+        function showAlert() {
+            const overlay = document.getElementById('fall-overlay');
+            overlay.style.display = 'block';
+            alertShown = true;
+
+            // ⏳ Auto-hide after 10 seconds (10,000 ms)
+            setTimeout(() => {
+                dismissAlert();
+            }, 10000);
+        }
+
+        function dismissAlert() {
+            document.getElementById('fall-overlay').style.display = 'none';
+            // We don't set alertShown = false immediately to prevent flashing
+            // It will reset if you refresh the page or if backend clears the flag
+        }
+
+        // Poll every 500ms
+        setInterval(fetchData, 500);
+    </script>
+</body>
+</html>
