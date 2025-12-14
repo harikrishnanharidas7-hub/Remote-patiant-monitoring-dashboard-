@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Sensor Sender</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #000; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        .data-box { font-size: 1.5rem; margin: 10px; }
+    </style>
+</head>
+<body>
+    <h3>📡 SENSOR ACTIVE</h3>
+    <p>Sending data to PC...</p>
+    
+    <div class="data-box">X: <span id="x">0</span></div>
+    <div class="data-box">Y: <span id="y">0</span></div>
+    <div class="data-box">Z: <span id="z">0</span></div>
+
+    <button id="btnPerm" class="btn btn-primary mt-4" style="display:none;" onclick="requestPermission()">Enable Sensors (iOS)</button>
+
+    <script>
+        // Check for iOS 13+ permission requirement
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+            document.getElementById('btnPerm').style.display = 'block';
+        }
+
+        function requestPermission() {
+            DeviceMotionEvent.requestPermission()
+                .then(response => {
+                    if (response == 'granted') {
+                        document.getElementById('btnPerm').style.display = 'none';
+                    }
+                })
+                .catch(console.error);
+        }
+
+        window.addEventListener("devicemotion", (event) => {
+            let x = event.accelerationIncludingGravity.x || 0;
+            let y = event.accelerationIncludingGravity.y || 0;
+            let z = event.accelerationIncludingGravity.z || 0;
+
+            // Update screen
+            document.getElementById("x").innerText = x.toFixed(2);
+            document.getElementById("y").innerText = y.toFixed(2);
+            document.getElementById("z").innerText = z.toFixed(2);
+
+            // Send to Python Server (Throttle to avoid crashing network)
+            if (Date.now() % 200 < 50) { // Send roughly every 200ms
+                fetch('/api/record_acceleration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: x, y: y, z: z })
+                }).catch(err => console.log("Send error")); // Ignore network blips
+            }
+        });
+    </script>
+</body>
+</html>
