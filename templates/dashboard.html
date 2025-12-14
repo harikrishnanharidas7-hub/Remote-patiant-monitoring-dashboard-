@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Monitor Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            /* 🎨 BACKGROUND IMAGE */
+            background: url('/static/dashboard_bg.jpg') no-repeat center center fixed;
+            background-size: cover;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #333;
+        }
+
+        /* Dark Overlay */
+        body::before {
+            content: ""; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5); z-index: -1;
+        }
+        
+        .card { 
+            border: none; border-radius: 20px; 
+            background: rgba(255, 255, 255, 0.95); 
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+            overflow: hidden;
+        }
+        .card:hover { transform: translateY(-5px); }
+
+        .navbar { background: rgba(15, 23, 42, 0.95) !important; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        
+        /* 🚨 ALERT STYLE */
+        #emergency-alert { 
+            display: none; /* Hidden by default, JS will show it */
+            animation: flash 1s infinite; 
+            z-index: 9999;
+            border: 4px solid #dc3545;
+        }
+        @keyframes flash { 0% {opacity: 1;} 50% {opacity: 0.5;} 100% {opacity: 1;} }
+        
+        /* METRIC CARDS */
+        .metric-card {
+            padding: 25px;
+            text-align: center;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .metric-icon { font-size: 3.5rem; margin-bottom: 5px; }
+        .metric-value { font-size: 3.5rem; font-weight: 800; color: #2c3e50; line-height: 1.2; }
+        .metric-label { font-size: 1.1rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; }
+
+        .chart-container { height: 300px; }
+        h5 { text-transform: uppercase; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand fw-bold">🏥 Patient Monitor <span class="badge bg-primary ms-1" style="font-size: 0.6em;">LIVE</span></span>
+            <div class="d-flex align-items-center">
+                <a href="/acceleration" class="btn btn-warning btn-sm me-3 fw-bold">📉 Vitals (Sensors)</a>
+                <span class="text-white small me-3">Last Sync: {{ today.last_updated }}</span>
+                <a href="/logout" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+
+        <div id="emergency-alert" class="alert alert-danger text-center shadow-lg p-5">
+            <h1 class="display-3 fw-bold">⚠️ CRITICAL ALERT</h1>
+            <h2 class="mb-3">FALL DETECTED - CHECK PATIENT</h2>
+            <button onclick="resetFall()" class="btn btn-light btn-lg mt-2 fw-bold text-danger">🛑 Acknowledge & Reset</button>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-12 text-center">
+                {% if today.goal_reached or today.steps >= 5000 %}
+                    <span class="badge bg-success p-3 rounded-pill shadow fs-6">✅ ACTIVITY TARGET MET</span>
+                {% else %}
+                    <span class="badge bg-secondary p-3 rounded-pill shadow fs-6">⚠️ Target Not Met ({{ 5000 - today.steps }} steps remaining)</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <h5 class="text-white border-bottom pb-2 fw-bold" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">⚡ Daily Activity</h5>
+        
+        <div class="row mb-5 align-items-stretch">
+            <div class="col-md-4 mb-3">
+                <div class="card metric-card">
+                    <div class="metric-icon">👣</div>
+                    <div class="metric-value">{{ today.steps }}</div>
+                    <div class="metric-label">Steps Taken</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card metric-card">
+                    <div class="metric-icon">🔥</div>
+                    <div class="metric-value">{{ today.calories }}</div>
+                    <div class="metric-label">Calories Burned</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card metric-card">
+                    <div class="metric-icon">📏</div>
+                    <div class="metric-value">{{ today.distance }} <span style="font-size: 0.5em;">km</span></div>
+                    <div class="metric-label">Distance Walked</div>
+                </div>
+            </div>
+        </div>
+
+        <h5 class="text-white border-bottom pb-2 mt-4 fw-bold" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">📅 Patient History</h5>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="card p-3">
+                    <h6 class="text-center text-primary fw-bold">Last 7 Days (Weekly)</h6>
+                    <div class="chart-container"><canvas id="weeklyChart"></canvas></div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <div class="card p-3">
+                    <h6 class="text-center text-primary fw-bold">Last 30 Days (Monthly)</h6>
+                    <div class="chart-container"><canvas id="monthlyChart"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- BAR CHARTS ---
+        function createBarChart(canvasId, labels, data, label, color) {
+            new Chart(document.getElementById(canvasId), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        backgroundColor: color,
+                        borderRadius: 6,
+                        borderWidth: 0
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f0f0f0' } },
+                        x: { grid: { display: false } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        createBarChart('weeklyChart', {{ week_labels | tojson }}, {{ week_steps | tojson }}, 'Steps', 'rgba(13, 110, 253, 0.8)');
+        createBarChart('monthlyChart', {{ month_labels | tojson }}, {{ month_steps | tojson }}, 'Steps', 'rgba(111, 66, 193, 0.8)');
+
+        // --- ⚡ LIVE ALERT POLLING (THE FIX) ---
+        // This checks the server every 1 second to see if a fall happened
+        function checkAlertStatus() {
+            fetch('/api/get_acceleration')
+                .then(response => response.json())
+                .then(data => {
+                    const alertBox = document.getElementById('emergency-alert');
+                    // data.alert comes from the Python backend (FALL_DETECTED_FLAG)
+                    if (data.alert) {
+                        alertBox.style.display = 'block'; // Show it
+                    } else {
+                        alertBox.style.display = 'none'; // Hide it
+                    }
+                })
+                .catch(error => console.log("Polling error:", error));
+        }
+
+        // Start checking every 1000ms (1 second)
+        setInterval(checkAlertStatus, 1000);
+
+        // Reset Fall Button Logic
+        function resetFall() {
+            fetch('/reset_fall').then(() => {
+                document.getElementById('emergency-alert').style.display = 'none';
+                window.location.reload();
+            });
+        }
+    </script>
+</body>
+</html>
